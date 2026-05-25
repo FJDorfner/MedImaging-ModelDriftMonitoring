@@ -363,39 +363,48 @@ def create_mmc_plot(df, date_col, output_dir, title, col_plot='MMC', mmc_min=Non
                     plot_end_date=pd.to_datetime('2021-07-01')):
         
     col_plot_display = 'MMC+' if col_plot.lower() == 'mmc' else col_plot
+    col_name = col_plot.lower()
 
     # Create complete date range and merge to introduce NaN values for missing dates
     date_range = pd.date_range(start=plot_start_date, end=plot_end_date, freq='D')
     date_df = pd.DataFrame({'date': date_range})
 
-    df['date'] = df[date_col]
+    df = pd.DataFrame({
+        'date': df[date_col],
+        col_name: df[col_name],
+    })
     df = df.merge(date_df, on='date', how='right')
     df.sort_values(by='date', inplace=True)
 
     # Check if there are NaN values in the 'mmc' columns and count them
-    nan_count = df[col_plot.lower()].isna().sum()
+    nan_count = df[col_name].isna().sum()
     if nan_count > 0:
-        logger.warning(f"Warning: There are {nan_count} NaN values in the '{col_plot.lower()}' column.")
+        logger.warning(f"Warning: There are {nan_count} NaN values in the '{col_name}' column.")
     
         # Interpolate NaN values only if there are less than 3 days of gap
-        df[col_plot.lower()] = df[col_plot.lower()].interpolate(method='linear', limit=2, limit_direction='both')
+        df[col_name] = df[col_name].interpolate(method='linear', limit=2, limit_direction='both')
         
         # Check if there are still NaN values after interpolation
-        remaining_nan = df[col_plot.lower()].isna().sum()
+        remaining_nan = df[col_name].isna().sum()
         if remaining_nan > 0:
-            logger.warning(f"Warning: There are still {remaining_nan} NaN values in the '{col_plot.lower()}' column after interpolation.")
+            logger.warning(f"Warning: There are still {remaining_nan} NaN values in the '{col_name}' column after interpolation.")
             logger.warning("These NaN values represent gaps of 3 or more days and were not interpolated.")
 
     # Create the figure with the original size
     fig, ax = plt.subplots(figsize=(4.8, 2.4), facecolor='white')  
 
-    ax.plot(df['date'], df[col_plot.lower()], label=col_plot_display, color='r')  
+    ax.plot(df['date'], df[col_name], label=col_plot_display, color='r')  
     
     if mmc_min is not None and mmc_max is not None:
 
-        mmc_min['date'] = mmc_min[date_col]
-        mmc_max['date'] = mmc_max[date_col]
-        
+        mmc_min = pd.DataFrame({
+            'date': mmc_min[date_col],
+            'mmc': mmc_min['mmc'],
+        })
+        mmc_max = pd.DataFrame({
+            'date': mmc_max[date_col],
+            'mmc': mmc_max['mmc'],
+        })
         mmc_min = mmc_min.merge(date_df, on='date', how='right')
         mmc_max = mmc_max.merge(date_df, on='date', how='right')
 
@@ -467,8 +476,8 @@ def create_mmc_plot(df, date_col, output_dir, title, col_plot='MMC', mmc_min=Non
 
     # Save the plot data as a CSV
     plot_data = pd.DataFrame({
-        'date': df[date_col],
-        col_plot.lower(): df[col_plot.lower()]
+        'date': df['date'],
+        col_name: df[col_name],
     })
 
     if mmc_min is not None and mmc_max is not None:

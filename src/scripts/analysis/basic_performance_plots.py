@@ -34,12 +34,19 @@ plt.rcParams['svg.fonttype'] = 'none'
         'metadata values.'
     )
 )
+@click.option(
+    '--skip-histograms',
+    is_flag=True,
+    default=False,
+    help='Skip creating interactive drilldown histogram plots.',
+)
 @tracked(directory_parameter='output_dir')
 def basic_performance_plots(
         drift_csv_path: Path,
         output_dir: Path,
         window_length: str = '30D',
-        equal_weights: bool = True
+        equal_weights: bool = True,
+        skip_histograms: bool = False,
 ):
     """Makes some basic performance against time plots from a drift CSV."""
 
@@ -260,7 +267,7 @@ def basic_performance_plots(
 
         else:
             logging.warning(f"Column {col} does not match any metric name in the weights dictionary")
-    mmc_df_weighted['mmc'] = mmc_df_weighted.sum(axis=1)
+    mmc_df_weighted['mmc'] = mmc_df_weighted[mmc_cols].sum(axis=1)
 
     for col in mmc_df_min_weighted.columns:
         metric_name = [metric for metric in col if metric in weights]
@@ -269,7 +276,7 @@ def basic_performance_plots(
 
         else:
             logging.warning(f"Column {col} does not match any metric name in the weights dictionary")
-    mmc_df_min_weighted['mmc'] = mmc_df_min_weighted.sum(axis=1)
+    mmc_df_min_weighted['mmc'] = mmc_df_min_weighted[mmc_cols_min].sum(axis=1)
 
     for col in mmc_df_max_weighted.columns:
         metric_name = [metric for metric in col if metric in weights]
@@ -278,7 +285,7 @@ def basic_performance_plots(
 
         else:
             logging.warning(f"Column {col} does not match any metric name in the weights dictionary")
-    mmc_df_max_weighted['mmc'] = mmc_df_max_weighted.sum(axis=1)
+    mmc_df_max_weighted['mmc'] = mmc_df_max_weighted[mmc_cols_max].sum(axis=1)
 
     # Create plots for weighted MMC
     analysis_utils.create_mmc_plot(mmc_df_weighted, date_col, output_dir, title='Weighted MMC+ with Range', mmc_min=mmc_df_min_weighted, mmc_max=mmc_df_max_weighted)
@@ -308,20 +315,28 @@ def basic_performance_plots(
     dirname = os.path.dirname(drift_csv_path)
     base_path_drilldown = os.path.join(dirname, 'history')
 
-    #Load one example date json to get the keys, needs to be adjusted if using a different dataset
-    date_json = os.path.join(base_path_drilldown, '2019-10-10.json')
-    with open(date_json, 'r') as f:
-        data = json.load(f)
+    if skip_histograms:
+        logging.info("Skipping drilldown histogram plots (--skip-histograms).")
+    elif not os.path.isdir(base_path_drilldown):
+        logging.info(f"No drilldown history directory found at {base_path_drilldown}. Skipping histogram plots.")
+    else:
+        # Load one example date json to get the keys, needs to be adjusted if using a different dataset
+        date_json = os.path.join(base_path_drilldown, '2019-10-10.json')
+        if not os.path.exists(date_json):
+            logging.info(f"No example drilldown JSON found at {date_json}. Skipping histogram plots.")
+        else:
+            with open(date_json, 'r') as f:
+                data = json.load(f)
 
-    keys = data['drilldowns'].keys()
+            keys = data['drilldowns'].keys()
 
-    if keys:
-        output_dir_hist = Path(os.path.join(output_dir, 'histograms'))
-        output_dir_hist.mkdir(parents=True, exist_ok=True)
-        for feature in tqdm(keys, desc="Creating Histograms"):
-            analysis_utils.plot_hist_feature(feature, basepath = base_path_drilldown, output_dir=output_dir_hist)
-    else: 
-        logging.info("There is no drilldown data present so no histograms could be created")
+            if keys:
+                output_dir_hist = Path(os.path.join(output_dir, 'histograms'))
+                output_dir_hist.mkdir(parents=True, exist_ok=True)
+                for feature in tqdm(keys, desc="Creating Histograms"):
+                    analysis_utils.plot_hist_feature(feature, basepath=base_path_drilldown, output_dir=output_dir_hist)
+            else:
+                logging.info("There is no drilldown data present so no histograms could be created")
 
 
 if __name__ == "__main__":
