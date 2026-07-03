@@ -4,12 +4,14 @@ from pathlib import Path
 from datetime import datetime
 import logging
 
+import numpy as np
 import pandas as pd
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import plotly.graph_objs as go
 import seaborn as sns
+from sklearn.metrics import roc_auc_score, roc_curve
 
 from model_drift.data import mgb_data
 
@@ -356,6 +358,105 @@ def create_joint_scatter_density_plots(df: pd.DataFrame, output_dir: Path, ref_s
     df_proportions = df_proportions.round(3)
     df_proportions.to_csv(os.path.join(output_dir, 'weighted_mmc_vs_performance_combined_proportions.csv'))
 
+
+def create_mmc_performance_roc_plots(
+    df: pd.DataFrame,
+    output_dir: Path,
+    ref_start: str,
+    ref_end: str,
+    mmc_df: pd.DataFrame,
+    emergency_date: str = '2020-03-10',
+    delays_days=(0, 7, 15, 30),
+):
+    """ROC curves for MMC+ separating windows before vs. after the state of emergency.
+
+    The ground-truth label is purely date-based: windows dated on/after the
+    cutoff are labelled positive, earlier windows negative. One ROC curve is
+    evaluated per cutoff, where each cutoff is ``emergency_date`` plus a delay
+    from ``delays_days`` (in days). The MMC+ score is used as the classifier
+    score, so higher MMC+ should indicate a post-cutoff window. Reports the AUC
+    and the Youden-J operating point (the MMC+ threshold maximizing
+    sensitivity + specificity - 1) for each cutoff.
+    """
+    plot_data = mmc_df[['mmc']].copy()
+    plot_data.index = pd.to_datetime(plot_data.index)
+    plot_data = plot_data.dropna().sort_index()
+
+    y_score = plot_data['mmc'].to_numpy()
+    roc_summaries = []
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    colors = plt.cm.viridis(np.linspace(0, 0.85, len(delays_days)))
+
+    for delay, color in zip(delays_days, colors):
+        cutoff = pd.Timestamp(emergency_date) + pd.Timedelta(days=delay)
+        y_true = (plot_data.index >= cutoff).astype(int)
+
+        if len(np.unique(y_true)) < 2:
+            logger.warning(
+                f"Skipping MMC date ROC for delay {delay}d: only one date class present around {cutoff.date()}."
+            )
+            continue
+
+        fpr, tpr, thresholds = roc_curve(y_true, y_score)
+        auc = roc_auc_score(y_true, y_score)
+
+        # Youden's J: threshold maximizing (sensitivity + specificity - 1) = tpr - fpr
+        youden_j = tpr - fpr
+        best_idx = int(np.argmax(youden_j))
+        best_threshold = thresholds[best_idx]
+        best_fpr = fpr[best_idx]
+        best_tpr = tpr[best_idx]
+
+        roc_summaries.append({
+            'delay_days': delay,
+            'cutoff_date': str(cutoff.date()),
+            'auc': auc,
+            'n_windows': int(len(plot_data)),
+            'n_before': int((1 - y_true).sum()),
+            'n_after': int(y_true.sum()),
+            'youden_j': float(youden_j[best_idx]),
+            'youden_mmc_threshold': float(best_threshold),
+            'sensitivity_at_youden': float(best_tpr),
+            'specificity_at_youden': float(1 - best_fpr),
+        })
+
+        ax.plot(
+            fpr,
+            tpr,
+            color=color,
+            linewidth=2,
+            label=f'+{delay}d (AUC = {auc:.3f}, Youden MMC+ = {best_threshold:.2f})',
+        )
+        ax.scatter(best_fpr, best_tpr, color=color, s=60, zorder=5)
+
+        plot_data[f'after_cutoff_{delay}d'] = y_true
+
+    if not roc_summaries:
+        plt.close(fig)
+        logger.warning("Skipping MMC date ROC plot: no valid cutoff produced two classes.")
+        return
+
+    ax.plot([0, 1], [0, 1], color='gray', linestyle='--', linewidth=1, label='Chance')
+    # Small margins so curves lying on the axis edges are not clipped
+    ax.set_xlim(-0.02, 1.02)
+    ax.set_ylim(-0.02, 1.02)
+    ax.set_xlabel('False Positive Rate (1 - Specificity)')
+    ax.set_ylabel('True Positive Rate (Sensitivity)')
+    ax.set_title('MMC+ discrimination of pre- versus post-state-of-emergency windows')
+    ax.legend(loc='lower right', fontsize=8)
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    fig.savefig(os.path.join(output_dir, 'mmc_date_roc.svg'), bbox_inches='tight')
+    fig.savefig(os.path.join(output_dir, 'mmc_date_roc.png'), dpi=600, bbox_inches='tight')
+    plt.close(fig)
+
+    plot_data.to_csv(os.path.join(output_dir, 'mmc_date_roc_data.csv'))
+
+    pd.DataFrame(roc_summaries).round(3).to_csv(
+        os.path.join(output_dir, 'mmc_date_roc_summary.csv'), index=False
+    )
 
 
 def create_mmc_plot(df, date_col, output_dir, title, col_plot='MMC', mmc_min=None, 
