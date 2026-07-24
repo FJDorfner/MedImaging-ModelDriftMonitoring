@@ -459,8 +459,8 @@ def create_mmc_performance_roc_plots(
     )
 
 
-def create_mmc_plot(df, date_col, output_dir, title, col_plot='MMC', mmc_min=None, 
-                    mmc_max=None, plot_start_date=pd.to_datetime('2019-11-01'), 
+def create_mmc_plot(df, date_col, output_dir, title, col_plot='MMC', mmc_lower=None, 
+                    mmc_upper=None, plot_start_date=pd.to_datetime('2019-11-01'), 
                     plot_end_date=pd.to_datetime('2021-07-01')):
         
     col_plot_display = 'MMC+' if col_plot.lower() == 'mmc' else col_plot
@@ -496,44 +496,44 @@ def create_mmc_plot(df, date_col, output_dir, title, col_plot='MMC', mmc_min=Non
 
     ax.plot(df['date'], df[col_name], label=col_plot_display, color='r')  
     
-    if mmc_min is not None and mmc_max is not None:
+    if mmc_lower is not None and mmc_upper is not None:
 
-        mmc_min = pd.DataFrame({
-            'date': mmc_min[date_col],
-            'mmc': mmc_min['mmc'],
+        mmc_lower = pd.DataFrame({
+            'date': mmc_lower[date_col],
+            'mmc': mmc_lower['mmc'],
         })
-        mmc_max = pd.DataFrame({
-            'date': mmc_max[date_col],
-            'mmc': mmc_max['mmc'],
+        mmc_upper = pd.DataFrame({
+            'date': mmc_upper[date_col],
+            'mmc': mmc_upper['mmc'],
         })
-        mmc_min = mmc_min.merge(date_df, on='date', how='right')
-        mmc_max = mmc_max.merge(date_df, on='date', how='right')
+        mmc_lower = mmc_lower.merge(date_df, on='date', how='right')
+        mmc_upper = mmc_upper.merge(date_df, on='date', how='right')
 
-        mmc_min.sort_values(by='date', inplace=True)
-        mmc_max.sort_values(by='date', inplace=True)
+        mmc_lower.sort_values(by='date', inplace=True)
+        mmc_upper.sort_values(by='date', inplace=True)
 
-        # Interpolate NaN values for mmc_min and mmc_max if provided
-        nan_count_min = mmc_min['mmc'].isna().sum()
-        if nan_count_min > 0:
-            logger.warning(f"Warning: There are {nan_count_min} NaN values in the 'mmc' column of mmc_min.")
-            mmc_min['mmc'] = mmc_min['mmc'].interpolate(method='linear', limit=2, limit_direction='both')
-            remaining_nan_min = mmc_min['mmc'].isna().sum()
-            if remaining_nan_min > 0:
-                logger.warning(f"Warning: There are still {remaining_nan_min} NaN values in the 'mmc' column of mmc_min after interpolation.")
+        # Interpolate NaN values for mmc_lower and mmc_upper if provided
+        nan_count_lower = mmc_lower['mmc'].isna().sum()
+        if nan_count_lower > 0:
+            logger.warning(f"Warning: There are {nan_count_lower} NaN values in the 'mmc' column of mmc_lower.")
+            mmc_lower['mmc'] = mmc_lower['mmc'].interpolate(method='linear', limit=2, limit_direction='both')
+            remaining_nan_lower = mmc_lower['mmc'].isna().sum()
+            if remaining_nan_lower > 0:
+                logger.warning(f"Warning: There are still {remaining_nan_lower} NaN values in the 'mmc' column of mmc_lower after interpolation.")
                 logger.warning("These NaN values represent gaps of 3 or more days and were not interpolated.")
 
-        nan_count_max = mmc_max['mmc'].isna().sum()
-        if nan_count_max > 0:
-            logger.warning(f"Warning: There are {nan_count_max} NaN values in the 'mmc' column of mmc_max.")
-            mmc_max['mmc'] = mmc_max['mmc'].interpolate(method='linear', limit=2, limit_direction='both')
-            remaining_nan_max = mmc_max['mmc'].isna().sum()
-            if remaining_nan_max > 0:
-                logger.warning(f"Warning: There are still {remaining_nan_max} NaN values in the 'mmc' column of mmc_max after interpolation.")
+        nan_count_upper = mmc_upper['mmc'].isna().sum()
+        if nan_count_upper > 0:
+            logger.warning(f"Warning: There are {nan_count_upper} NaN values in the 'mmc' column of mmc_upper.")
+            mmc_upper['mmc'] = mmc_upper['mmc'].interpolate(method='linear', limit=2, limit_direction='both')
+            remaining_nan_upper = mmc_upper['mmc'].isna().sum()
+            if remaining_nan_upper > 0:
+                logger.warning(f"Warning: There are still {remaining_nan_upper} NaN values in the 'mmc' column of mmc_upper after interpolation.")
                 logger.warning("These NaN values represent gaps of 3 or more days and were not interpolated.")
 
 
-        ax.fill_between(df['date'], mmc_min['mmc'], mmc_max['mmc'], 
-                        alpha=0.5, label='MMC+ Range', color='gray')
+        ax.fill_between(df['date'], mmc_lower['mmc'], mmc_upper['mmc'], 
+                        alpha=0.5, label='Mean ± 3 Std', color='gray')
                     
     # Add vertical line on Junary 1st, 2020 and March 10th
     ax.axvline(x=pd.to_datetime('2020-01-01'), color='darkblue', linestyle='--', linewidth=1)
@@ -581,9 +581,9 @@ def create_mmc_plot(df, date_col, output_dir, title, col_plot='MMC', mmc_min=Non
         col_name: df[col_name],
     })
 
-    if mmc_min is not None and mmc_max is not None:
-        plot_data['mmc_min'] = mmc_min['mmc']
-        plot_data['mmc_max'] = mmc_max['mmc']
+    if mmc_lower is not None and mmc_upper is not None:
+        plot_data['mmc_lower'] = mmc_lower['mmc']
+        plot_data['mmc_upper'] = mmc_upper['mmc']
 
     plot_data.to_csv(output_dir / f'{title.lower().replace(" ", "_")}.csv', index=False)
     plt.close()

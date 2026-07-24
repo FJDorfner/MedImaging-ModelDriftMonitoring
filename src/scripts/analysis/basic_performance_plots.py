@@ -116,17 +116,11 @@ def basic_performance_plots(
         and col[2] == 'distance'
         and col[3] == 'mean'
     ]
-    mmc_cols_min = [
+    mmc_cols_std = [
         col for col in df.columns
         if not col[0].startswith('performance')
         and col[2] == 'distance'
-        and col[3] == 'min'
-    ]
-    mmc_cols_max = [
-        col for col in df.columns
-        if not col[0].startswith('performance')
-        and col[2] == 'distance'
-        and col[3] == 'max'
+        and col[3] == 'std'
     ]
 
     vae_cols = [
@@ -154,8 +148,8 @@ def basic_performance_plots(
 
     
     mmc_df = df[mmc_cols + [date_col]].copy()
-    mmc_df_min = df[mmc_cols_min + [date_col]].copy()
-    mmc_df_max = df[mmc_cols_max + [date_col]].copy()
+    mmc_df_lower = df[mmc_cols_std + [date_col]].copy()
+    mmc_df_upper = df[mmc_cols_std + [date_col]].copy()
 
     ref_df = mmc_df[(mmc_df[date_col] >= ref_window_start) & (mmc_df[date_col] <= ref_window_end)].copy()
 
@@ -166,23 +160,19 @@ def basic_performance_plots(
     # Normalize columns by mean and std of reference data
     for c in mmc_cols:
         mmc_df[c] = (mmc_df[c] - ref_df[c].mean()) / (ref_df[c].std() + 1e-6)
-        # replace mean word in c with min
+        # replace mean word in c with std
         c_list = list(c)
-        c_list[-1] = 'min'
-        c_min = tuple(c_list)
-        mmc_df_min[c_min] = (mmc_df_min[c_min] - ref_df[c].mean()) / (ref_df[c].std() + 1e-6)
-        # replace mean word in c with max
-        c_list = list(c)
-        c_list[-1] = 'max'
-        c_max = tuple(c_list)
-        mmc_df_max[c_max] = (mmc_df_max[c_max] - ref_df[c].mean()) / (ref_df[c].std() + 1e-6)
+        c_list[-1] = 'std'
+        c_std = tuple(c_list)
+        mmc_df_lower[c_std] = (df[c] - 3 * mmc_df_lower[c_std] - ref_df[c].mean()) / (ref_df[c].std() + 1e-6)
+        mmc_df_upper[c_std] = (df[c] + 3 * mmc_df_upper[c_std] - ref_df[c].mean()) / (ref_df[c].std() + 1e-6)
 
     mmc_df['mmc'] = mmc_df.mean(axis=1, numeric_only=True)
-    mmc_df_min['mmc'] = mmc_df_min.mean(axis=1, numeric_only=True)
-    mmc_df_max['mmc'] = mmc_df_max.mean(axis=1, numeric_only=True)
+    mmc_df_lower['mmc'] = mmc_df_lower.mean(axis=1, numeric_only=True)
+    mmc_df_upper['mmc'] = mmc_df_upper.mean(axis=1, numeric_only=True)
 
 
-    analysis_utils.create_mmc_plot(mmc_df, date_col, output_dir, title='Unweighted MMC+ with Range', mmc_min=mmc_df_min, mmc_max=mmc_df_max)
+    analysis_utils.create_mmc_plot(mmc_df, date_col, output_dir, title='Unweighted MMC+ with Range', mmc_lower=mmc_df_lower, mmc_upper=mmc_df_upper)
     analysis_utils.create_mmc_plot(mmc_df, date_col, output_dir, title='Unweighted MMC+')
 
     #TODO: These plots currently use the unweighted MMC, but are not used in the paper
@@ -251,12 +241,12 @@ def basic_performance_plots(
 
     # Create weighted MMC dataframes
     mmc_df_weighted = mmc_df.copy()
-    mmc_df_min_weighted = mmc_df_min.copy()
-    mmc_df_max_weighted = mmc_df_max.copy()
+    mmc_df_lower_weighted = mmc_df_lower.copy()
+    mmc_df_upper_weighted = mmc_df_upper.copy()
 
     mmc_df_weighted.drop(columns=["mmc"], inplace=True)
-    mmc_df_min_weighted.drop(columns=["mmc"], inplace=True)
-    mmc_df_max_weighted.drop(columns=["mmc"], inplace=True)
+    mmc_df_lower_weighted.drop(columns=["mmc"], inplace=True)
+    mmc_df_upper_weighted.drop(columns=["mmc"], inplace=True)
 
 
     # Apply weights to the MMC dataframes
@@ -269,26 +259,26 @@ def basic_performance_plots(
             logging.warning(f"Column {col} does not match any metric name in the weights dictionary")
     mmc_df_weighted['mmc'] = mmc_df_weighted[mmc_cols].sum(axis=1)
 
-    for col in mmc_df_min_weighted.columns:
+    for col in mmc_df_lower_weighted.columns:
         metric_name = [metric for metric in col if metric in weights]
         if metric_name:
-            mmc_df_min_weighted[col] = mmc_df_min_weighted[col] * weights[metric_name[0]]
+            mmc_df_lower_weighted[col] = mmc_df_lower_weighted[col] * weights[metric_name[0]]
 
         else:
             logging.warning(f"Column {col} does not match any metric name in the weights dictionary")
-    mmc_df_min_weighted['mmc'] = mmc_df_min_weighted[mmc_cols_min].sum(axis=1)
+    mmc_df_lower_weighted['mmc'] = mmc_df_lower_weighted[mmc_cols_std].sum(axis=1)
 
-    for col in mmc_df_max_weighted.columns:
+    for col in mmc_df_upper_weighted.columns:
         metric_name = [metric for metric in col if metric in weights]
         if metric_name:
-            mmc_df_max_weighted[col] = mmc_df_max_weighted[col] * weights[metric_name[0]]
+            mmc_df_upper_weighted[col] = mmc_df_upper_weighted[col] * weights[metric_name[0]]
 
         else:
             logging.warning(f"Column {col} does not match any metric name in the weights dictionary")
-    mmc_df_max_weighted['mmc'] = mmc_df_max_weighted[mmc_cols_max].sum(axis=1)
+    mmc_df_upper_weighted['mmc'] = mmc_df_upper_weighted[mmc_cols_std].sum(axis=1)
 
     # Create plots for weighted MMC
-    analysis_utils.create_mmc_plot(mmc_df_weighted, date_col, output_dir, title='Weighted MMC+ with Range', mmc_min=mmc_df_min_weighted, mmc_max=mmc_df_max_weighted)
+    analysis_utils.create_mmc_plot(mmc_df_weighted, date_col, output_dir, title='Weighted MMC+ with Range', mmc_lower=mmc_df_lower_weighted, mmc_upper=mmc_df_upper_weighted)
     analysis_utils.create_mmc_plot(mmc_df_weighted, date_col, output_dir, title='Weighted MMC+')
     analysis_utils.create_joint_scatter_density_plots(df, output_dir, ref_window_start, ref_window_end, mmc_df_weighted)
     analysis_utils.create_mmc_performance_roc_plots(df, output_dir, ref_window_start, ref_window_end, mmc_df_weighted)
